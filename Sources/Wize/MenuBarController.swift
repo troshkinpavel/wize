@@ -8,6 +8,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let editor: SizeEditorPanel
     private let onSettingsChanged: () -> Void
     private let settingsWindow = SettingsWindow()
+    var capture: CaptureController?
     /// The window the open menu was built for; actions target it even if focus shifts meanwhile.
     private var menuWindow: AXUIElement?
 
@@ -85,6 +86,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let shortcut = Shortcut.editSize
         edit.keyEquivalent = shortcut.key.lowercased()
         edit.keyEquivalentModifierMask = shortcut.modifiers
+        item(menu, "Screenshot Window", #selector(screenshotWindow))
+        item(menu, capture?.isRecording == true ? "Stop Recording" : "Record Window", #selector(recordWindow))
         menu.addItem(.separator())
 
         let lock = constraints.lock(for: window)
@@ -137,6 +140,18 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         change(&lock, size)
         constraints.setLock(lock, for: window)
         onSettingsChanged() // redraw a persistent badge with the new lock state
+    }
+
+    @objc private func screenshotWindow() {
+        guard let window = menuWindow else { return }
+        // After the menu closes, so it can't end up in the capture timing.
+        DispatchQueue.main.async { MainActor.assumeIsolated { self.capture?.screenshot(window) } }
+    }
+
+    @objc private func recordWindow() {
+        if capture?.isRecording == true { return capture?.stopRecording() ?? () }
+        guard let window = menuWindow else { return }
+        DispatchQueue.main.async { MainActor.assumeIsolated { self.capture?.startRecording(window) } }
     }
 
     @objc private func editSize() {

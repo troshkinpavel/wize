@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var editor = SizeEditorPanel(ax: ax, constraints: constraints)
     private lazy var liveResize = LockedResizeController(ax: ax, constraints: constraints)
     private var menuBar: MenuBarController?
+    private lazy var capture = CaptureController(ax: ax, tracker: tracker)
     private var hotKey: HotKey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -58,6 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let focused = ax.focusedWindow, CFEqual(focused, window) else { return }
             tracker.reveal(window)
         }
+        menuBar?.capture = capture
+        editor.onScreenshot = { [capture] in capture.screenshot($0) }
+        editor.onRecord = { [capture] in capture.toggleRecording($0) }
+        editor.isRecording = { [capture] in capture.isRecording }
+        overlay.onStopRecording = { [capture] in capture.stopRecording() }
         overlay.onClick = { [tracker, editor, ax] in
             guard let window = tracker.currentWindow ?? ax.focusedWindow else { return }
             editor.show(for: window)

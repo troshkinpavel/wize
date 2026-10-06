@@ -36,6 +36,8 @@
 
 **Lock width, height or aspect ratio.** Lock W, H, or a ratio like 16:9. The window keeps it while you drag, not just after you let go. Handy for screen recordings, screenshots and testing layouts.
 
+**Screenshot or record just that window.** The camera and record buttons in the bar capture only that window, so Wize itself never shows up in the image or video. Screenshots are PNGs, recordings are .mov files. Both are saved where your macOS screenshots go (Desktop by default). While recording, the badge shows a timer and a stop button.
+
 **Ratios and presets.** 16:9, 16:10, 4:3, 3:2, 1:1, 21:9, plus size presets (HD, Full HD and your own).
 
 | Dark | Light |
@@ -55,6 +57,8 @@
 1. Download `Wize-1.0.0.zip` from [Releases](https://github.com/troshkinpavel/wize/releases/latest) and unzip it.
 2. Move **Wize.app** to Applications and open it. The app is signed and notarized by Apple.
 3. Give Wize **Accessibility** access when it asks (System Settings → Privacy & Security → Accessibility). Wize needs it to read and set window sizes. It never reads what's inside windows, and it doesn't connect to the internet.
+
+For the screenshot and record buttons, macOS also asks for **Screen Recording** access the first time you use them.
 
 Optional: turn on **Launch at login** in Wize → Settings.
 

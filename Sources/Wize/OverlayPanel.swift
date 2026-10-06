@@ -26,6 +26,8 @@ enum OverlayPlacement {
 @MainActor
 final class OverlayPanel {
     var onClick: (() -> Void)?
+    /// The red stop button shown while the window is being recorded.
+    var onStopRecording: (() -> Void)?
     /// Next appearance skips the fade/pop: the Edit Size shell has just morphed back into an identical pill.
     var appearInstantly = false
     var frame: CGRect { panel.frame }
@@ -55,7 +57,12 @@ final class OverlayPanel {
         chip.content.addSubview(label)
         clickArea.autoresizingMask = [.width, .height]
         clickArea.toolTip = "Edit Size"
-        clickArea.onClick = { [weak self] in self?.onClick?() }
+        clickArea.onClick = { [weak self] x in
+            guard let self else { return }
+            // While recording, the leading stop button stops; the rest of the pill opens Edit Size.
+            if self.contentKey?.recording != nil, x < self.label.frame.minX + 24 { self.onStopRecording?() }
+            else { self.onClick?() }
+        }
         chip.addSubview(clickArea)
         panel.contentView = chip
     }
@@ -69,7 +76,7 @@ final class OverlayPanel {
     /// `flashW/H`: the user is dragging against that lock. Called every display frame while tracking:
     /// the position is applied immediately and never animated.
     func show(size: CGSize, position: CGPoint?, lock: WindowLockState, flashW: Bool = false, flashH: Bool = false,
-              near window: CGRect, bounds: CGRect) {
+              recording: String? = nil, near window: CGRect, bounds: CGRect) {
         generation += 1
         // Zero-duration, no implicit actions: the chip must move with the window corner in the same frame.
         NSAnimationContext.beginGrouping()
@@ -85,12 +92,12 @@ final class OverlayPanel {
         // Rebuild text/layout only when what it shows changes; otherwise this is a pure move.
         let key = ContentKey(w: Int(size.width.rounded()), h: Int(size.height.rounded()),
                              x: position.map { Int($0.x.rounded()) }, y: position.map { Int($0.y.rounded()) },
-                             lock: lock, flashW: flashW, flashH: flashH)
+                             lock: lock, flashW: flashW, flashH: flashH, recording: recording)
         var chipSize = panel.frame.size
         if key != contentKey {
             contentKey = key
             label.attributedStringValue = Self.content(size: size, position: position, lock: lock,
-                                                       flashW: flashW, flashH: flashH)
+                                                       flashW: flashW, flashH: flashH, recording: recording)
             let layout = Self.layout(label, extended: position != nil)
             chipSize = layout.size
             label.frame = layout.label
@@ -133,13 +140,15 @@ final class OverlayPanel {
         var x, y: Int?
         var lock: WindowLockState
         var flashW, flashH: Bool
+        var recording: String?
     }
     private var contentKey: ContentKey?
 
     /// `1280 × 720` (dimmed ×), lock glyph after each locked dimension, and `· 16:10` in accent while the
     /// aspect ratio is locked. ⌥ adds a second line with `X 320  Y 180`.
+    /// `recording`: elapsed time; prefixes a red stop button and `0:12 ·` (design).
     static func content(size: CGSize, position: CGPoint?, lock: WindowLockState,
-                        flashW: Bool = false, flashH: Bool = false) -> NSAttributedString {
+                        flashW: Bool = false, flashH: Bool = false, recording: String? = nil) -> NSAttributedString {
         // Two-line geometry needs true monospace to keep columns aligned; the compact form reads better in SF.
         let font: NSFont = position == nil
             ? .monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
@@ -163,6 +172,11 @@ final class OverlayPanel {
             out.append(symbolBadge(symbol, font: font, color: Palette.accentText))
         }
         let w = Int(size.width.rounded()), h = Int(size.height.rounded())
+        if let recording {
+            out.append(stopButton(font: font))
+            text(" \(recording)", .systemRed)
+            text("  ·  ", .tertiaryLabelColor, weight: .bold)
+        }
         if let position {
             text("W "); text("\(w)", wColor); badge(lock.width != nil, "lock.fill")
             text("  H "); text("\(h)", hColor); badge(lock.height != nil, "lock.fill")
@@ -175,6 +189,22 @@ final class OverlayPanel {
             ratio()
         }
         return out
+    }
+
+    /// 20 pt red disc with a white rounded square, centered on the text line.
+    static func stopButton(font: NSFont) -> NSAttributedString {
+        let d: CGFloat = 20
+        let image = NSImage(size: NSSize(width: d, height: d), flipped: false) { r in
+            NSColor.systemRed.setFill()
+            NSBezierPath(ovalIn: r).fill()
+            NSColor.white.setFill()
+            NSBezierPath(roundedRect: r.insetBy(dx: 6.5, dy: 6.5), xRadius: 1.5, yRadius: 1.5).fill()
+            return true
+        }
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = CGRect(x: 0, y: (font.capHeight - d) / 2, width: d, height: d)
+        return NSAttributedString(attachment: attachment)
     }
 
     static func symbolBadge(_ name: String, font: NSFont, color: NSColor = .secondaryLabelColor) -> NSAttributedString {
@@ -210,11 +240,14 @@ final class OverlayPanel {
 
 /// Transparent click catcher on top of the badge. Takes the first click without activating anything.
 private final class ClickView: NSView {
-    var onClick: (() -> Void)?
+    var onClick: ((CGFloat) -> Void)? // x of the click in the badge
+    /// The red stop button shown while the window is being recorded.
+    var onStopRecording: (() -> Void)?
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseDown(with event: NSEvent) {}
     override func mouseUp(with event: NSEvent) {
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+        let p = convert(event.locationInWindow, from: nil)
+        if bounds.contains(p) { onClick?(p.x) }
     }
 }
 

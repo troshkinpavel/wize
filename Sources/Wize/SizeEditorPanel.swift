@@ -20,6 +20,11 @@ final class SizeEditorPanel: NSObject, NSWindowDelegate, NSTextFieldDelegate {
     var onOpen: (() -> Void)?
     /// The shell has morphed back into a pill for this window: show the real badge in its place.
     var onClose: ((AXUIElement) -> Void)?
+    /// Camera / record buttons: the size is applied first, then the window is captured.
+    var onScreenshot: ((AXUIElement) -> Void)?
+    var onRecord: ((AXUIElement) -> Void)?
+    /// Whether a recording is running (the record button then reads "Stop recording").
+    var isRecording: () -> Bool = { false }
 
     private let ax: AccessibilityManager
     private let constraints: WindowConstraintController
@@ -36,6 +41,8 @@ final class SizeEditorPanel: NSObject, NSWindowDelegate, NSTextFieldDelegate {
     private var lockW: HoverButton!
     private var lockH: HoverButton!
     private var ratioChip: RatioChip!
+    private var shotButton: CaptureButton!
+    private var recordButton: CaptureButton!
     private var window: AXUIElement?
     private var closing = false
     private let tween = Tween()
@@ -77,7 +84,10 @@ final class SizeEditorPanel: NSObject, NSWindowDelegate, NSTextFieldDelegate {
         let divider = Divider()
         let sizes = group([group([Self.label("W"), widthBox, lockW], spacing: 6), Self.label("×", dim: true),
                            group([Self.label("H"), heightBox, lockH], spacing: 6)], spacing: 8)
-        for view in [sizes, divider, group([ratioChip, apply], spacing: 8)] { stack.addArrangedSubview(view) }
+        shotButton = CaptureButton(kind: .screenshot, target: self, action: #selector(screenshotWindow))
+        recordButton = CaptureButton(kind: .record, target: self, action: #selector(recordWindow))
+        for view in [sizes, divider, group([ratioChip, apply], spacing: 8), Divider(),
+                     group([shotButton, recordButton], spacing: 4)] { stack.addArrangedSubview(view) }
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 12
@@ -96,6 +106,7 @@ final class SizeEditorPanel: NSObject, NSWindowDelegate, NSTextFieldDelegate {
         lockH.toolTip = "Keep height fixed while resizing"
         ratioChip.toolTip = "Aspect ratio — keeps proportions while typing and resizing"
         apply.toolTip = "Set size (Return)"
+        shotButton.toolTip = "Screenshot this window. Wize is left out of the image."
         for field in [widthField, heightField] { field.delegate = self }
         widthField.nextKeyView = heightField
         heightField.nextKeyView = widthField
@@ -117,6 +128,7 @@ final class SizeEditorPanel: NSObject, NSWindowDelegate, NSTextFieldDelegate {
         widthField.stringValue = "\(Int(axFrame.width.rounded()))"
         heightField.stringValue = "\(Int(axFrame.height.rounded()))"
         refresh()
+        recordButton.toolTip = isRecording() ? "Stop recording" : "Record this window. Wize is left out of the video."
         onOpen?()
 
         barSize = stack.fittingSize
@@ -231,6 +243,15 @@ final class SizeEditorPanel: NSObject, NSWindowDelegate, NSTextFieldDelegate {
                   origin: CGPoint(x: anchorRight ? stack.bounds.width : 0, y: stack.bounds.height / 2))
         // Only the visible bar takes clicks (the pill layer is display-only).
         stack.isHidden = barStyle.opacity < 0.01
+    }
+
+    @objc private func screenshotWindow() { applyAndCapture(onScreenshot) }
+    @objc private func recordWindow() { applyAndCapture(onRecord) }
+
+    private func applyAndCapture(_ action: ((AXUIElement) -> Void)?) {
+        guard let target = window, commit() else { return NSSound.beep() }
+        close()
+        action?(target)
     }
 
     @objc private func applyAndClose() {
@@ -575,6 +596,54 @@ private final class ApplyButton: NSButton {
             .withSymbolConfiguration(.init(pointSize: 11, weight: .bold).applying(.init(paletteColors: [.white]))) {
             check.draw(in: CGRect(x: bounds.midX - check.size.width / 2, y: bounds.midY - check.size.height / 2,
                                   width: check.size.width, height: check.size.height))
+        }
+    }
+}
+
+/// 28 pt round icon button with a hover wash: camera (screenshot) or a ring with a red dot (record).
+private final class CaptureButton: NSButton {
+    enum Kind { case screenshot, record }
+    private var kind = Kind.screenshot
+    private var hovering = false { didSet { needsDisplay = true } }
+
+    convenience init(kind: Kind, target: AnyObject, action: Selector) {
+        self.init(frame: .zero)
+        self.kind = kind
+        self.target = target
+        self.action = action
+        isBordered = false
+        title = ""
+        refusesFirstResponder = true
+        setAccessibilityLabel(kind == .screenshot ? "Screenshot window" : "Record window")
+        widthAnchor.constraint(equalToConstant: 28).isActive = true
+        heightAnchor.constraint(equalToConstant: 28).isActive = true
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if hovering || isHighlighted {
+            (isDark(self) ? NSColor(white: 1, alpha: 0.12) : NSColor(white: 0, alpha: 0.07)).setFill()
+            NSBezierPath(ovalIn: bounds).fill()
+        }
+        let c = CGPoint(x: bounds.midX, y: bounds.midY)
+        switch kind {
+        case .screenshot:
+            if let camera = NSImage(systemSymbolName: "camera", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 14, weight: .regular).applying(.init(paletteColors: [.labelColor]))) {
+                camera.draw(in: CGRect(x: c.x - camera.size.width / 2, y: c.y - camera.size.height / 2,
+                                       width: camera.size.width, height: camera.size.height))
+            }
+        case .record:
+            let ring = NSBezierPath(ovalIn: CGRect(x: c.x - 6.35, y: c.y - 6.35, width: 12.7, height: 12.7))
+            ring.lineWidth = 1.3
+            NSColor.labelColor.setStroke()
+            ring.stroke()
+            NSColor.systemRed.setFill()
+            NSBezierPath(ovalIn: CGRect(x: c.x - 3.5, y: c.y - 3.5, width: 7, height: 7)).fill()
         }
     }
 }

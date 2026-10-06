@@ -46,6 +46,18 @@ final class WindowResizeTracker {
     var currentWindow: AXUIElement? { window }
     /// While Edit Size is open its shell owns the badge's spot: no badge, including for its own resizes.
     var suspended = false
+    /// The window being recorded: its badge stays up (even with auto-hide or the overlay off) and shows
+    /// `recordingTime` with a stop button.
+    private(set) var pinned: AXUIElement?
+    private var recordingTime: String?
+    private var lastRecordingTime: String?
+
+    /// Starts/updates (time) or ends (nil window) the recording badge.
+    func pin(_ element: AXUIElement?, time: String?) {
+        pinned = element
+        recordingTime = time
+        if let element { track(element) } else { refresh() }
+    }
 
     /// Brings the badge back right after Edit Size morphed into an identical pill (no fade/pop).
     func reveal(_ element: AXUIElement) {
@@ -102,6 +114,7 @@ final class WindowResizeTracker {
     /// Focus left the badge's window (app switch, desktop click → macOS slides windows aside): the badge
     /// must not stay behind on its own. Persistent mode re-attaches to the newly focused window.
     func focusDidChange(to element: AXUIElement?) {
+        if pinned != nil { return } // the recorded window keeps its badge
         if !Settings.autoHide { return refresh() }
         guard let window else { return }
         if element.map({ !CFEqual($0, window) }) ?? true { stop(animated: true) }
@@ -110,12 +123,13 @@ final class WindowResizeTracker {
     /// Re-attaches the persistent badge to the focused window (auto-hide off), or clears it.
     func refresh() {
         stop()
+        if let pinned { return track(pinned) }
         guard Settings.overlayEnabled, !Settings.autoHide, let window = ax.focusedWindow else { return }
         track(window)
     }
 
     private func track(_ element: AXUIElement) {
-        guard !suspended, Settings.overlayEnabled || constraints.hasLock(element) else { return }
+        guard !suspended, Settings.overlayEnabled || constraints.hasLock(element) || pinned != nil else { return }
         if window == nil || !CFEqual(window, element) {
             guard ax.isStandardWindow(element) else { return Settings.autoHide ? () : stop() }
             stopTracking()
@@ -176,7 +190,9 @@ final class WindowResizeTracker {
             lastChange = .now // keep tracking to show the result
             return
         }
-        if frame != lastFrame || option != lastOption || mouseDown != lastMouseDown || flash != lastFlash {
+        if frame != lastFrame || option != lastOption || mouseDown != lastMouseDown || flash != lastFlash
+            || recordingTime != lastRecordingTime {
+            lastRecordingTime = recordingTime
             if frame != lastFrame { lastChange = .now }
             lastFrame = frame
             lastOption = option
@@ -187,7 +203,8 @@ final class WindowResizeTracker {
                    mouseDown: mouseDown)
         } else if !mouseDown, Date.now.timeIntervalSince(lastChange) > settleDelay {
             stopTracking()
-            guard Settings.autoHide else { return } // persistent badge stays; next move/resize wakes tracking
+            // Persistent or recording badge stays; the next move/resize/tick wakes tracking.
+            guard Settings.autoHide, pinned.map({ !CFEqual($0, window) }) ?? true else { return }
             let work = DispatchWorkItem { [weak self] in
                 MainActor.assumeIsolated {
                     self?.overlay.hide()
@@ -201,7 +218,9 @@ final class WindowResizeTracker {
     }
 
     private func render(_ axFrame: CGRect, size: CGSize, window: AXUIElement, extended: Bool, mouseDown: Bool = false) {
-        guard Settings.overlayEnabled, let (frame, screen) = AccessibilityManager.placement(forAX: axFrame) else {
+        let recording = pinned.map { CFEqual($0, window) } == true
+        guard Settings.overlayEnabled || recording,
+              let (frame, screen) = AccessibilityManager.placement(forAX: axFrame) else {
             return overlay.hide(animated: false)
         }
         // Maximized (fills the work area) or native fullscreen: stay out of the way.
@@ -213,7 +232,8 @@ final class WindowResizeTracker {
         let flashW = mouseDown && (constraints.dragFlash.w || lock.width.map { abs(axFrame.width - $0) > 4 } == true)
         let flashH = mouseDown && (constraints.dragFlash.h || lock.height.map { abs(axFrame.height - $0) > 4 } == true)
         overlay.show(size: size, position: extended ? axFrame.origin : nil, lock: lock,
-                     flashW: flashW, flashH: flashH, near: frame, bounds: screen.visibleFrame)
+                     flashW: flashW, flashH: flashH, recording: recording ? recordingTime : nil,
+                     near: frame, bounds: screen.visibleFrame)
     }
 }
 
