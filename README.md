@@ -32,7 +32,10 @@
 
 **Type an exact size.** Click the badge (or use the menu, or press ⌃⌥E anywhere) and it opens into a small bar. Type W and H, press Return, done. ↑/↓ nudge by 1, ⇧↑/⇧↓ by 10, Esc cancels.
 
-<img src="docs/images/edit-dark-window.png" width="620" alt="Edit Size bar">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/edit-dark.png">
+  <img src="docs/images/edit-light.png" width="680" alt="Edit Size bar with screenshot and record buttons">
+</picture>
 
 **Lock width, height or aspect ratio.** Lock W, H, or a ratio like 16:9. The window keeps it while you drag, not just after you let go. Handy for screen recordings, screenshots and testing layouts.
 
