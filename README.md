@@ -54,7 +54,7 @@
 
 ## Install
 
-1. Download `Wize-1.0.0.zip` from [Releases](https://github.com/troshkinpavel/wize/releases/latest) and unzip it.
+1. Download the latest `Wize-x.y.z.zip` from [Releases](https://github.com/troshkinpavel/wize/releases/latest) and unzip it.
 2. Move **Wize.app** to Applications and open it. The app is signed and notarized by Apple.
 3. Give Wize **Accessibility** access when it asks (System Settings → Privacy & Security → Accessibility). Wize needs it to read and set window sizes. It never reads what's inside windows, and it doesn't connect to the internet.
 
